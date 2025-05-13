@@ -3,7 +3,7 @@ game 'gta5'
 version '2.1.4'
 
 description 'Renewed Banking'
-Author "uShifty#1733"
+Author "uShifty#1733 & Prosir"
 version '2.1.4'
 
 lua54 'yes'
