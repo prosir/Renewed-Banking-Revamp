@@ -1,0 +1,275 @@
+:root {
+  /* Dark Fleeca theme */
+  --fleeca-green: #00a550;
+  --fleeca-light-green: #00c261;
+  --fleeca-dark-green: #008542;
+
+  --fleeca-bg: #121212;
+  --fleeca-card: #1e1e1e;
+  --fleeca-card-hover: #252525;
+  --fleeca-text: #e0e0e0;
+  --fleeca-text-secondary: #a0a0a0;
+  --fleeca-border: #333333;
+  --fleeca-hover: #2a2a2a;
+
+  --border-radius-sm: 0.25rem;
+  --border-radius: 0.5rem;
+  --border-radius-lg: 0.75rem;
+  --border-radius-xl: 1rem;
+
+  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --hover-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  --glow-shadow: 0 0 15px rgba(0, 165, 80, 0.3);
+
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font-family-sans: "Inter", sans-serif;
+  --font-family-display: "Poppins", sans-serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  outline: none;
+}
+
+a,
+img,
+button,
+input,
+label,
+select,
+span,
+i {
+  display: inline-block;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+ul {
+  list-style: none;
+}
+
+img {
+  width: 100%;
+  height: 100%;
+}
+
+html {
+  font-size: 75%;
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--font-family-sans);
+  background-color: transparent;
+  color: var(--fleeca-text);
+}
+
+/* Button styles */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  font-size: 1.1rem;
+  border-radius: var(--border-radius);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary {
+  background-color: var(--fleeca-green);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--fleeca-dark-green);
+}
+
+.btn-secondary {
+  background-color: var(--fleeca-card);
+  border: 1px solid var(--fleeca-border);
+  color: var(--fleeca-text);
+}
+
+.btn-secondary:hover {
+  background-color: var(--fleeca-hover);
+}
+
+/* Form elements */
+input,
+select,
+textarea {
+  background-color: var(--fleeca-card);
+  border: 1px solid var(--fleeca-border);
+  border-radius: var(--border-radius);
+  color: var(--fleeca-text);
+  padding: 1.2rem;
+  transition: all var(--transition-normal);
+  width: 100%;
+  font-size: 1.2rem;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--fleeca-green);
+  box-shadow: 0 0 0 2px rgba(0, 165, 80, 0.1);
+}
+
+/* Card styling */
+.clean-card {
+  background-color: var(--fleeca-card);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--card-shadow);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+  overflow: hidden;
+  position: relative;
+}
+
+.clean-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--hover-shadow);
+}
+
+/* Account card styling */
+.account-card {
+  background-color: white;
+  border-radius: var(--border-radius);
+  padding: 16px;
+  box-shadow: var(--card-shadow);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  border-left: 4px solid var(--fleeca-green);
+}
+
+.account-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--hover-shadow);
+}
+
+.account-card.active {
+  background-color: #f9fffc;
+  border-left: 4px solid var(--fleeca-green);
+  box-shadow: var(--hover-shadow);
+}
+
+/* Utility classes */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes countUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 5px rgba(0, 165, 80, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(0, 165, 80, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 5px rgba(0, 165, 80, 0.3);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s ease forwards;
+}
+
+.animate-pulse {
+  animation: pulse 2s infinite;
+}
+
+.animate-countUp {
+  animation: countUp 0.5s ease-out forwards;
+}
+
+.animate-glow {
+  animation: glow 2s infinite;
+}
+
+/* Money counter animation */
+.money-counter {
+  position: relative;
+  overflow: hidden;
+}
+
+.money-counter .digit {
+  display: inline-block;
+  animation: countUp 0.5s ease-out forwards;
+  animation-delay: calc(var(--digit-index) * 0.05s);
+}
+
+/* Balance display with glow effect */
+.balance-display {
+  transition: all 0.3s ease;
+}
+
+.balance-display.highlight {
+  animation: glow 2s ease-in-out;
+}
