@@ -1,5 +1,5 @@
 <div class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 animate-fadeIn">
-  <div class="max-w-[400px] w-full bg-fleeca-card p-8 rounded-lg shadow-card">
+  <div class="max-w-md w-full bg-fleeca-card p-8 rounded-lg shadow-card">
     <div class="flex flex-col items-center justify-center">
       <div class="relative w-24 h-24 mb-6">
         <div class="absolute inset-0 rounded-full border-4 border-fleeca-bg"></div>
@@ -18,6 +18,13 @@
 </div>
 
 <style>
+  @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+  }
+  .animate-fadeIn {
+      animation: fadeIn 0.3s ease-in-out forwards;
+  }
   .fixed {
       position: fixed;
   }
@@ -36,11 +43,8 @@
   .justify-center {
       justify-content: center;
   }
-  .max-w-\[50rem\] {
-      max-width: 50rem;
-  }
-  .max-h-\[25rem\] {
-      max-height: 25rem;
+  .max-w-md {
+      max-width: 28rem;
   }
   .w-full {
       width: 100%;
@@ -48,41 +52,26 @@
   .h-full {
       height: 100%;
   }
-  .bg-primary {
-      background-color: var(--clr-primary);
+  .p-8 {
+      padding: 2rem;
   }
-  .p-20 {
-      padding: 5rem;
-  }
-  .rounded-\[1rem\] {
-      border-radius: 1rem;
+  .rounded-lg {
+      border-radius: 0.5rem;
   }
   .relative {
       position: relative;
   }
-  .w-20 {
-      width: 5rem;
+  .w-24 {
+      width: 6rem;
   }
-  .h-20 {
-      height: 5rem;
-  }
-  .left-\[40\%\] {
-      left: 40%;
-  }
-  .top-\[25\%\] {
-      top: 25%;
+  .h-24 {
+      height: 6rem;
   }
   .absolute {
       position: absolute;
   }
   .border-4 {
       border-width: 4px;
-  }
-  .border-t-white {
-      border-top-color: white;
-  }
-  .border-opacity-30 {
-      border-opacity: 0.3;
   }
   .rounded-full {
       border-radius: 9999px;
@@ -93,26 +82,6 @@
   @keyframes spin {
       to {
           transform: rotate(360deg);
-      }
-  }
-  @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-  }
-  .animate-fadeIn {
-      animation: fadeIn 0.3s ease-in-out forwards;
-  }
-  .animate-shimmer {
-      animation: shimmer 2s linear infinite;
-      background-size: 200% 100%;
-      background-image: linear-gradient(to right, #00A550, #00D66A, #00A550);
-  }
-  @keyframes shimmer {
-      0% {
-          background-position: -100% 0;
-      }
-      100% {
-          background-position: 100% 0;
       }
   }
 </style>
