@@ -9,12 +9,12 @@
  let cardsPerPage = 3;
  let selectedCategory = 'all';
  
- const orgNames = ["police", "ambulance", "ems", "sheriff", "fire", "government", "lspd", "bcso"];
- 
  function isSpecialOrg(account) {
-   if (!account.name || typeof account.name !== 'string') return false;
-   const lowerName = account.name.toLowerCase();
-   return orgNames.some(org => lowerName.includes(org));
+   if (!account.id || typeof account.id !== 'string') return false;
+   
+   // Check if account ID contains only letters (and optionally underscores/hyphens)
+   // Player CIDs have numbers, organization accounts typically don't
+   return /^[a-zA-Z_-]+$/.test(account.id);
  }
  
  $: filteredAccounts = $accounts && Array.isArray($accounts) 
