@@ -193,7 +193,7 @@
 </script>
 
 {#if isVisible}
-  <div class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+<div class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 animate-fadeIn">
     <div class="max-w-[800px] w-full bg-fleeca-bg rounded-lg shadow-card overflow-hidden animate-slideUp">
       <div class="bg-fleeca-card p-5 border-b border-fleeca-border">
         <div class="flex justify-between items-center">
