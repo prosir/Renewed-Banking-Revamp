@@ -45,17 +45,30 @@
     }
   }
 
-  function viewAccountMembers(account) {
+  async function viewAccountMembers(account) {
     selectedAccount = account;
-    fetchNui('Renewed-Banking:client:viewMemberManagement', { account }).then(response => {
+    
+    try {
+      const response = await fetchNui('getMemberManagement', { account });
+      
       if (response) {
         accountMembers = response.members || {};
         activeView = 'viewMembers';
+      } else {
+        accountMembers = {};
+        activeView = 'viewMembers';
       }
-    });
+    } catch (error) {
+      accountMembers = {};
+      activeView = 'viewMembers';
+      notify.set({
+        message: get(translations).error_loading_members || "Error loading account members",
+        type: "error"
+      });
+    }
   }
 
-  function createAccount(accountId) {
+  async function createAccount(accountId) {
     if (!accountId) {
       notify.set({
         message: get(translations).missing_params || "Please provide an account ID",
@@ -64,25 +77,24 @@
       return;
     }
 
-    fetchNui('Renewed-Banking:client:createNewAccount', accountId)
-      .then(() => {
-        notify.set({
-          message: get(translations).account_created || "Account created successfully",
-          type: "success"
-        });
-        fetchPlayerAccounts();
-        activeView = 'accountsList';
-        onAccountChange();
-      })
-      .catch(() => {
-        notify.set({
-          message: "Error creating account",
-          type: "error"
-        });
+    try {
+      await fetchNui('Renewed-Banking:client:createNewAccount', accountId);
+      notify.set({
+        message: get(translations).account_created || "Account created successfully",
+        type: "success"
       });
+      fetchPlayerAccounts();
+      activeView = 'accountsList';
+      onAccountChange();
+    } catch {
+      notify.set({
+        message: get(translations).error_creating_account || "Error creating account",
+        type: "error"
+      });
+    }
   }
 
-  function addAccountMember(data) {
+  async function addAccountMember(data) {
     if (!data.memberId) {
       notify.set({
         message: get(translations).missing_params || "Please provide a member ID",
@@ -91,32 +103,44 @@
       return;
     }
 
-    fetchNui('Renewed-Banking:client:addAccountMember', { 
-      account: selectedAccount, 
-      memberId: data.memberId 
-    }).then(() => {
+    try {
+      await fetchNui('Renewed-Banking:client:addAccountMember', { 
+        account: selectedAccount, 
+        memberId: data.memberId 
+      });
       notify.set({
         message: get(translations).member_added || "Member added successfully",
         type: "success"
       });
       viewAccountMembers(selectedAccount);
-    });
+    } catch {
+      notify.set({
+        message: get(translations).error_adding_member || "Error adding member",
+        type: "error"
+      });
+    }
   }
 
-  function removeAccountMember(memberId) {
-    fetchNui('Renewed-Banking:client:removeAccountMember', { 
-      account: selectedAccount, 
-      cid: memberId 
-    }).then(() => {
+  async function removeAccountMember(memberId) {
+    try {
+      await fetchNui('Renewed-Banking:client:removeAccountMember', { 
+        account: selectedAccount, 
+        cid: memberId 
+      });
       notify.set({
         message: get(translations).member_removed || "Member removed successfully",
         type: "success"
       });
       viewAccountMembers(selectedAccount);
-    });
+    } catch {
+      notify.set({
+        message: get(translations).error_removing_member || "Error removing member",
+        type: "error"
+      });
+    }
   }
 
-  function changeAccountName(data) {
+  async function changeAccountName(data) {
     if (!data.newName) {
       notify.set({
         message: get(translations).missing_params || "Please provide a new account name",
@@ -125,10 +149,11 @@
       return;
     }
 
-    fetchNui('Renewed-Banking:client:changeAccountName', { 
-      account: selectedAccount, 
-      newName: data.newName 
-    }).then(() => {
+    try {
+      await fetchNui('Renewed-Banking:client:changeAccountName', { 
+        account: selectedAccount, 
+        newName: data.newName 
+      });
       notify.set({
         message: get(translations).account_renamed || "Account renamed successfully",
         type: "success"
@@ -136,13 +161,19 @@
       fetchPlayerAccounts();
       activeView = 'accountsList';
       onAccountChange();
-    });
+    } catch {
+      notify.set({
+        message: get(translations).error_renaming_account || "Error renaming account",
+        type: "error"
+      });
+    }
   }
 
-  function deleteAccount() {
-    fetchNui('Renewed-Banking:client:deleteAccount', { 
-      account: selectedAccount 
-    }).then(() => {
+  async function deleteAccount() {
+    try {
+      await fetchNui('Renewed-Banking:client:deleteAccount', { 
+        account: selectedAccount 
+      });
       notify.set({
         message: get(translations).account_deleted || "Account deleted successfully",
         type: "success"
@@ -150,7 +181,12 @@
       fetchPlayerAccounts();
       activeView = 'accountsList';
       onAccountChange();
-    });
+    } catch {
+      notify.set({
+        message: get(translations).error_deleting_account || "Error deleting account",
+        type: "error"
+      });
+    }
   }
 
   function handleConfirmation(action, data = null) {

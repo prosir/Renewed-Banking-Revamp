@@ -8,6 +8,7 @@ end)
 
 local pedSpawned = false
 local blips = {}
+
 function CreatePeds()
     if pedSpawned then return end
     for k = 1, #Config.peds do
@@ -64,8 +65,8 @@ function CreatePeds()
         blips[k] = AddBlipForCoord(coords.x, coords.y, coords.z-1)
         SetBlipSprite(blips[k], 108)
         SetBlipDisplay(blips[k], 4)
-        SetBlipScale  (blips[k], 0.80)
-        SetBlipColour (blips[k], 2)
+        SetBlipScale(blips[k], 0.80)
+        SetBlipColour(blips[k], 2)
         SetBlipAsShortRange(blips[k], true)
         BeginTextCommandSetBlipName('STRING')
         AddTextComponentString('Bank')
@@ -99,35 +100,31 @@ local function openBankUI(data)
     SendNUIMessage({action = 'setLoading', status = true})
     nuiHandler(true)
     
-    -- Use TriggerServerEvent and listen for a response instead of using lib.callback
     TriggerServerEvent('Renewed-Banking:server:getBankData')
-    
-    -- We'll handle the response in a separate event
-    RegisterNetEvent('Renewed-Banking:client:receiveBankData', function(accounts)
-        if not accounts then
-            nuiHandler(false)
-            -- Replace lib.notify with UI notification
-            TriggerEvent('Renewed-Banking:client:sendNotification', {
-                message = locale('loading_failed'),
-                title = locale('bank_name'),
-                type = 'error'
-            })
-            return
-        end
-        SetTimeout(1000, function()
-            SendNUIMessage({
-                action = 'setVisible',
-                status = isVisible,
-                accounts = accounts,
-                loading = false,
-                atm = isAtm,
-                platinumThreshold = Config.platinumThreshold
-            })
-        end)
-    end)
 end
 
--- Update the progress bar callback to use UI notifications
+RegisterNetEvent('Renewed-Banking:client:receiveBankData', function(accounts)
+    if not accounts then
+        nuiHandler(false)
+        TriggerEvent('Renewed-Banking:client:sendNotification', {
+            message = locale('loading_failed'),
+            title = locale('bank_name'),
+            type = 'error'
+        })
+        return
+    end
+    SetTimeout(1000, function()
+        SendNUIMessage({
+            action = 'setVisible',
+            status = isVisible,
+            accounts = accounts,
+            loading = false,
+            atm = data and data.atm or false,
+            platinumThreshold = Config.platinumThreshold
+        })
+    end)
+end)
+
 RegisterNetEvent('Renewed-Banking:client:openBankUI', function(data)
     local txt = data.atm and locale('open_atm') or locale('open_bank')
     TaskStartScenarioInPlace(PlayerPed, 'PROP_HUMAN_ATM', 0, true)
@@ -151,7 +148,6 @@ RegisterNetEvent('Renewed-Banking:client:openBankUI', function(data)
         ClearPedTasksImmediately(PlayerPed)
     else
         ClearPedTasksImmediately(PlayerPed)
-        -- Replace lib.notify with UI notification
         TriggerEvent('Renewed-Banking:client:sendNotification', {
             message = locale('canceled'),
             title = locale('bank_name'),
@@ -167,14 +163,17 @@ end)
 
 RegisterCommand('closeBankUI', function() nuiHandler(false) end, false)
 
+-- Banking Actions
 local bankActions = {'deposit', 'withdraw', 'transfer'}
-CreateThread(function ()
+CreateThread(function()
     for k=1, #bankActions do
         RegisterNUICallback(bankActions[k], function(data, cb)
             local newTransaction = lib.callback.await('Renewed-Banking:server:'..bankActions[k], false, data)
             cb(newTransaction)
         end)
     end
+    
+    -- ATM Target Setup
     exports.ox_target:addModel(Config.atms, {{
         name = 'renewed_banking_openui',
         event = 'Renewed-Banking:client:openBankUI',
@@ -193,11 +192,10 @@ AddEventHandler('onResourceStop', function(resource)
     DeletePeds()
 end)
 
--- Update the notification function to use the UI notification system
+-- Notification System
 RegisterNetEvent('Renewed-Banking:client:sendNotification', function(msg, notificationType)
     if not msg then return end
     
-    -- If msg is a string, convert it to an object with type
     local notification
     if type(msg) == "string" then
         notification = {
@@ -214,11 +212,11 @@ RegisterNetEvent('Renewed-Banking:client:sendNotification', function(msg, notifi
     })
 end)
 
+-- Account Management
 RegisterNetEvent('Renewed-Banking:client:viewAccountsMenu', function()
     TriggerServerEvent('Renewed-Banking:server:getPlayerAccounts')
 end)
 
--- Update the checkAccountManagement callback to only return if management is available, not to show it
 lib.callback.register('Renewed-Banking:client:checkAccountManagement', function()
     local playerCoords = GetEntityCoords(PlayerPed)
     local canManage = false
@@ -241,38 +239,11 @@ lib.callback.register('Renewed-Banking:client:checkAccountManagement', function(
     }
 end)
 
--- Add this NUI callback to handle the account management check
-RegisterNUICallback('Renewed-Banking:client:checkAccountManagement', function(_, cb)
-    local playerCoords = GetEntityCoords(PlayerPed)
-    local canManage = false
-    local canCreate = false
-    
-    for k = 1, #Config.peds do
-        local pedCoords = vector3(Config.peds[k].coords.x, Config.peds[k].coords.y, Config.peds[k].coords.z)
-        local distance = #(playerCoords - pedCoords)
-        
-        if distance < 10.0 then
-            canManage = true
-            canCreate = Config.peds[k].createAccounts or false
-            break
-        end
-    end
-    
-    cb({
-        showManagement = canManage,
-        canCreateAccounts = canCreate
-    })
-end)
-
--- Modify the existing RegisterNetEvent('Renewed-Banking:client:accountManagmentMenu', function() ... end)
--- to use the new UI instead of ox_lib menus
 RegisterNetEvent("Renewed-Banking:client:accountManagmentMenu", function()
-    -- Just open the regular banking UI without showing account management
-    -- The UI will have a button to access account management if available
     TriggerEvent('Renewed-Banking:client:openBankUI', {atm = false, showManagement = false})
 end)
 
--- Add these client events to connect the UI to the server
+-- Server Event Handlers
 RegisterNetEvent('Renewed-Banking:client:getPlayerAccounts', function()
     TriggerServerEvent('Renewed-Banking:server:getPlayerAccounts')
 end)
@@ -301,7 +272,43 @@ RegisterNetEvent('Renewed-Banking:client:deleteAccount', function(data)
     TriggerServerEvent('Renewed-Banking:server:deleteAccount', data)
 end)
 
--- Add these NUI callbacks for the account management functions
+-- NUI Callbacks for Account Management
+RegisterNUICallback('Renewed-Banking:client:checkAccountManagement', function(_, cb)
+    local playerCoords = GetEntityCoords(PlayerPed)
+    local canManage = false
+    local canCreate = false
+    
+    for k = 1, #Config.peds do
+        local pedCoords = vector3(Config.peds[k].coords.x, Config.peds[k].coords.y, Config.peds[k].coords.z)
+        local distance = #(playerCoords - pedCoords)
+        
+        if distance < 10.0 then
+            canManage = true
+            canCreate = Config.peds[k].createAccounts or false
+            break
+        end
+    end
+    
+    cb({
+        showManagement = canManage,
+        canCreateAccounts = canCreate
+    })
+end)
+
+RegisterNUICallback('getMemberManagement', function(data, cb)
+    if data and data.account then
+        lib.callback('Renewed-Banking:server:getMemberManagement', false, function(response)
+            if response then
+                cb(response)
+            else
+                cb({account = data.account, members = {}})
+            end
+        end, data)
+    else
+        cb({members = {}})
+    end
+end)
+
 RegisterNUICallback('Renewed-Banking:client:getPlayerAccounts', function(_, cb)
     lib.callback('Renewed-Banking:server:getPlayerAccounts', false, function(accounts)
         SendNUIMessage({
@@ -314,43 +321,6 @@ end)
 
 RegisterNUICallback('Renewed-Banking:client:createNewAccount', function(data, cb)
     TriggerServerEvent('Renewed-Banking:server:createNewAccount', data)
-    cb('ok')
-end)
-
-RegisterNUICallback('Renewed-Banking:client:viewMemberManagement', function(data, cb)
-    print("DEBUG: Client received viewMemberManagement request")
-    print("DEBUG: Data received: " .. (data and json.encode(data) or "nil"))
-    
-    if data and data.account then
-        print("DEBUG: Sending to server for account: " .. tostring(data.account))
-        TriggerServerEvent('Renewed-Banking:server:viewMemberManagement', data)
-    else
-        print("ERROR: No account data provided")
-    end
-    
-    cb('ok')
-end)
-
--- Also register the alternative callback names the UI might be using
-RegisterNUICallback('viewMemberManagement', function(data, cb)
-    print("DEBUG: Alternative callback - viewMemberManagement")
-    print("DEBUG: Data: " .. (data and json.encode(data) or "nil"))
-    
-    if data and data.account then
-        TriggerServerEvent('Renewed-Banking:server:viewMemberManagement', data)
-    end
-    
-    cb('ok')
-end)
-
-RegisterNUICallback('getAccountMembers', function(data, cb)
-    print("DEBUG: Alternative callback - getAccountMembers")
-    print("DEBUG: Data: " .. (data and json.encode(data) or "nil"))
-    
-    if data and data.account then
-        TriggerServerEvent('Renewed-Banking:server:viewMemberManagement', data)
-    end
-    
     cb('ok')
 end)
 

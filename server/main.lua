@@ -1,228 +1,4 @@
-RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, member)
-    local Player = GetPlayerObject(source)
-    if not Player then
-        print("ERROR: Could not get player object for source: " .. tostring(source))
-        return
-    end
-    
-    local playerCid = GetIdentifier(Player)
-    if not playerCid then
-        print("ERROR: Could not get player identifier")
-        return
-    end
-
-    -- Validate inputs
-    if not account or not member or account == "" or member == "" then
-        Notify(source, {
-            title = "Banking",
-            message = "Invalid account or member ID provided",
-            type = "error"
-        })
-        return
-    end
-
-    -- Clean up the member ID (remove spaces, make uppercase for QB frameworks)
-    member = string.gsub(tostring(member), "%s+", "")
-    if Framework == 'qb' or Framework == 'qbx' then
-        member = string.upper(member)
-    end
-
-    print("DEBUG: Looking for CID: " .. tostring(member) .. " (Framework: " .. tostring(Framework) .. ")")
-
-    -- Check if trying to add their own ID
-    if member == playerCid then
-        Notify(source, {
-            title = "Banking",
-            message = "You cannot add yourself to the account",
-            type = "error"
-        })
-        return
-    end
-
-    -- Check if the account exists
-    if not cachedAccounts or not cachedAccounts[account] then
-        Notify(source, {
-            title = "Banking",
-            message = "Account does not exist",
-            type = "error"
-        })
-        return
-    end
-
-    -- Check if the player is the account creator
-    if playerCid ~= cachedAccounts[account].creator then 
-        print("Illegal action by " .. tostring(GetPlayerName(source))) 
-        Notify(source, {
-            title = "Banking",
-            message = "You are not authorized to add members to this account",
-            type = "error"
-        })
-        return 
-    end
-
-    -- Check if the CID exists in the database and get player info
-    local playerExists = false
-    local Player2 = nil
-    local playerName = "Unknown Player"
-    
-    -- First try to get online player
-    Player2 = GetPlayerObjectFromID(member)
-    if Player2 then
-        playerExists = true
-        local name = GetCharacterName(Player2)
-        if name then
-            playerName = tostring(name)
-        end
-        print("DEBUG: Found online player: " .. tostring(playerName))
-    else
-        print("DEBUG: Player not online, checking database...")
-        -- Check if the CID exists in the database (for offline players)
-        
-        if Framework == 'qb' or Framework == 'qbx' then
-            -- For QB frameworks, check players table
-            local success, result = pcall(function()
-                return MySQL.query.await('SELECT citizenid, charinfo FROM players WHERE citizenid = ?', {member})
-            end)
-            
-            if success and result and #result > 0 then
-                playerExists = true
-                print("DEBUG: QB Query result count: " .. tostring(#result))
-                
-                -- Try to get character name
-                if result[1] and result[1].charinfo and result[1].charinfo ~= '' then
-                    local charSuccess, charinfo = pcall(json.decode, result[1].charinfo)
-                    if charSuccess and charinfo and charinfo.firstname and charinfo.lastname then
-                        playerName = tostring(charinfo.firstname) .. " " .. tostring(charinfo.lastname)
-                    end
-                end
-                print("DEBUG: Found offline QB player: " .. tostring(playerName))
-            else
-                print("DEBUG: No QB player found with CID: " .. tostring(member))
-            end
-        elseif Framework == 'esx' then
-            -- For ESX, check users table
-            local success, result = pcall(function()
-                return MySQL.query.await('SELECT identifier, firstname, lastname FROM users WHERE identifier = ?', {member})
-            end)
-            
-            if success and result and #result > 0 then
-                playerExists = true
-                print("DEBUG: ESX Query result count: " .. tostring(#result))
-                
-                if result[1] and result[1].firstname and result[1].lastname then
-                    playerName = tostring(result[1].firstname) .. " " .. tostring(result[1].lastname)
-                end
-                print("DEBUG: Found offline ESX player: " .. tostring(playerName))
-            else
-                print("DEBUG: No ESX player found with identifier: " .. tostring(member))
-            end
-        end
-    end
-
-    print("DEBUG: Player exists: " .. tostring(playerExists))
-
-    -- If CID doesn't exist, stop here and show error
-    if not playerExists then
-        local errorMessage = "Citizen ID '" .. tostring(member) .. "' does not exist in the database"
-        
-        -- Try direct client event
-        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
-            message = errorMessage,
-            title = "Banking",
-            type = "error"
-        })
-        
-        -- Also try Notify function as backup
-        Notify(source, {
-            title = "Banking",
-            message = errorMessage,
-            type = "error"
-        })
-        
-        print("ERROR: " .. errorMessage)
-        return
-    end
-
-    -- Check if player is already a member
-    if cachedAccounts[account] and cachedAccounts[account].auth and cachedAccounts[account].auth[member] then
-        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
-            message = "Player is already a member of this account",
-            title = "Banking",
-            type = "error"
-        })
-        return
-    end
-
-    -- Initialize player cache if it doesn't exist (for offline players)
-    if not cachedPlayers[member] then
-        print("DEBUG: Initializing player cache for: " .. tostring(member))
-        UpdatePlayerAccount(member)
-    end
-
-    -- Add the account to the player's account list
-    if cachedPlayers[member] and cachedPlayers[member].accounts then
-        table.insert(cachedPlayers[member].accounts, account)
-    end
-
-    -- Build the auth array for database update
-    local auth = {}
-    if cachedAccounts[account] and cachedAccounts[account].auth then
-        for k in pairs(cachedAccounts[account].auth) do 
-            table.insert(auth, k)
-        end
-    end
-    table.insert(auth, member)
-    
-    -- Update the cached account auth
-    if not cachedAccounts[account].auth then
-        cachedAccounts[account].auth = {}
-    end
-    cachedAccounts[account].auth[member] = true
-    
-    -- Update the database
-    local success, err = pcall(function()
-        MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(auth), account})
-    end)
-    
-    if not success then
-        print("ERROR: Database update failed: " .. tostring(err))
-        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
-            message = "Database error occurred",
-            title = "Banking",
-            type = "error"
-        })
-        return
-    end
-    
-    print("DEBUG: Successfully added " .. tostring(member) .. " to account " .. tostring(account))
-    
-    -- Success notification
-    TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
-        message = "Member " .. tostring(playerName) .. " (" .. tostring(member) .. ") added successfully",
-        title = "Banking",
-        type = "success"
-    })
-    
-    -- Notify the added player if they're online
-    if Player2 then
-        local targetSource = nil
-        if Player2.source then
-            targetSource = Player2.source
-        elseif Player2.PlayerId then
-            targetSource = Player2.PlayerId
-        elseif Player2.PlayerData and Player2.PlayerData.source then
-            targetSource = Player2.PlayerData.source
-        end
-        
-        if targetSource then
-            TriggerClientEvent("Renewed-Banking:client:sendNotification", targetSource, {
-                message = "You have been added to a shared account: " .. tostring(account),
-                title = "Banking",
-                type = "success"
-            })
-        end
-    end
-end)local cachedAccounts = {}
+local cachedAccounts = {}
 local cachedPlayers = {}
 
 -- Ensure Framework is properly detected
@@ -239,10 +15,13 @@ CreateThread(function()
     else
         Framework = 'unknown'
     end
-    print("FRAMEWORK DETECTED: " .. tostring(Framework))
 end)
 
 function UpdatePlayerAccount(cid)
+    if not cid or cid == "" then
+        return false
+    end
+    
     local p = promise.new()
     MySQL.query('SELECT * FROM player_transactions WHERE id = ?', {cid}, function(account)
         local query = '%' .. cid .. '%'
@@ -266,6 +45,9 @@ end
 
 -- Framework Events
 AddEventHandler('QBCore:Server:PlayerLoaded', function(Player)
+    if not Player or not Player.PlayerData or not Player.PlayerData.citizenid then
+        return
+    end
     local cid = Player.PlayerData.citizenid
     UpdatePlayerAccount(cid)
 end)
@@ -277,7 +59,9 @@ AddEventHandler('onResourceStart', function(resourceName)
             local Player = GetPlayerObject(v)
             if Player then
                 local cid = GetIdentifier(Player)
-                UpdatePlayerAccount(cid)
+                if cid then
+                    UpdatePlayerAccount(cid)
+                end
             end
         end
     end
@@ -349,8 +133,12 @@ end)
 -- Utility Functions
 local function getBankData(source)
     local Player = GetPlayerObject(source)
+    if not Player then return {} end
+    
     local bankData = {}
     local cid = GetIdentifier(Player)
+    if not cid then return {} end
+    
     if not cachedPlayers[cid] then UpdatePlayerAccount(cid) end
     local funds = GetFunds(Player)
     
@@ -452,7 +240,11 @@ local function handleTransaction(account, title, amount, message, issuer, receiv
 end
 
 local function updateBalance(account)
+    if not account or not cachedAccounts[account] then
+        return false
+    end
     MySQL.prepare("UPDATE bank_accounts_new SET amount = ? WHERE id = ?",{ cachedAccounts[account].amount, account })
+    return true
 end
 
 local function getPlayerData(source, id)
@@ -700,8 +492,12 @@ end)
 -- Account Management Events
 RegisterNetEvent('Renewed-Banking:server:createNewAccount', function(accountid)
     local Player = GetPlayerObject(source)
+    if not Player then return end
+    
     if cachedAccounts[accountid] then return Notify(source, {title = locale("bank_name"), description = locale("account_taken"), type = "error"}) end
     local cid = GetIdentifier(Player)
+    if not cid then return end
+    
     cachedAccounts[accountid] = {
         id = accountid,
         type = locale("org"),
@@ -719,84 +515,52 @@ RegisterNetEvent('Renewed-Banking:server:createNewAccount', function(accountid)
 end)
 
 lib.callback.register('Renewed-Banking:server:getPlayerAccounts', function(source)
-    print("=== GET PLAYER ACCOUNTS CALLBACK ===")
-    print("Source: " .. tostring(source))
-    
     local Player = GetPlayerObject(source)
     if not Player then
-        print("ERROR: Could not get player object")
         return {}
     end
     
     local cid = GetIdentifier(Player)
     if not cid then
-        print("ERROR: Could not get player identifier")
         return {}
     end
     
-    print("Player CID: " .. tostring(cid))
-    
     if not cachedPlayers[cid] then
-        print("Player not in cache, updating...")
         UpdatePlayerAccount(cid)
     end
     
     if not cachedPlayers[cid] or not cachedPlayers[cid].accounts then
-        print("No accounts found for player")
         return {}
     end
     
     local accounts = cachedPlayers[cid].accounts
     local data = {}
     
-    print("Player has " .. tostring(#accounts) .. " shared accounts")
-    
     if #accounts >= 1 then
         for k=1, #accounts do
             local accountId = accounts[k]
-            print("Checking account: " .. tostring(accountId))
             
             if cachedAccounts[accountId] then
                 local creator = cachedAccounts[accountId].creator
-                print("  Account creator: " .. tostring(creator))
-                print("  Player CID: " .. tostring(cid))
                 
                 if creator == cid then
                     table.insert(data, accountId)
-                    print("  Added to list (player is creator)")
-                else
-                    print("  Skipped (player is not creator)")
                 end
-            else
-                print("  Account not found in cache: " .. tostring(accountId))
             end
         end
     end
     
-    print("Returning " .. tostring(#data) .. " accounts:")
-    for i, account in ipairs(data) do
-        print("  " .. i .. ": " .. tostring(account))
-    end
-    
-    print("=== END GET PLAYER ACCOUNTS ===")
     return data
 end)
 
--- Create a callback version for synchronous member management
 lib.callback.register('Renewed-Banking:server:getMemberManagement', function(source, data)
-    print("=== GET MEMBER MANAGEMENT CALLBACK ===")
-    print("Source: " .. tostring(source))
-    print("Data: " .. (data and json.encode(data) or "nil"))
-    
     local Player = GetPlayerObject(source)
     if not Player then
-        print("ERROR: Could not get player object")
-        return {account = data.account, members = {}}
+        return {account = data and data.account or "", members = {}}
     end
 
     local account = data and data.account
     if not account then
-        print("ERROR: No account specified")
         return {members = {}}
     end
     
@@ -805,48 +569,40 @@ lib.callback.register('Renewed-Banking:server:getMemberManagement', function(sou
         members = {}
     }
     local cid = GetIdentifier(Player)
-
-    print("Account: " .. tostring(account))
-    print("Requesting player: " .. tostring(cid))
+    if not cid then
+        return retData
+    end
 
     -- Check if account exists
     if not cachedAccounts or not cachedAccounts[account] then
-        print("ERROR: Account does not exist: " .. tostring(account))
         return retData
     end
-
-    print("Account found!")
-    print("Account creator: " .. tostring(cachedAccounts[account].creator))
 
     -- Check if player is authorized to view members
     if cid ~= cachedAccounts[account].creator then
-        print("ERROR: Player not authorized to view members")
         return retData
     end
 
-    print("Player authorized!")
-
     -- Process members
     if cachedAccounts[account].auth then
-        print("Processing auth members...")
         for memberId, _ in pairs(cachedAccounts[account].auth) do
-            print("Processing member: " .. tostring(memberId))
-            
             -- Skip the account creator from the member list
             if memberId ~= cid then
-                print("  Member is not creator, adding to list")
                 local memberName = "Unknown Player"
                 
                 -- Try to get online player first
                 local Player2 = GetPlayerObjectFromID(memberId)
                 if Player2 then
-                    memberName = GetCharacterName(Player2)
-                    print("    Found online: " .. tostring(memberName))
+                    local name = GetCharacterName(Player2)
+                    if name then
+                        memberName = tostring(name)
+                    end
                 else
-                    print("    Player offline, checking database...")
                     -- Get name from database for offline player
+                    local success, result = false, nil
+                    
                     if Framework == 'qb' or Framework == 'qbx' then
-                        local success, result = pcall(function()
+                        success, result = pcall(function()
                             return MySQL.query.await('SELECT charinfo FROM players WHERE citizenid = ?', {memberId})
                         end)
                         
@@ -859,7 +615,7 @@ lib.callback.register('Renewed-Banking:server:getMemberManagement', function(sou
                             end
                         end
                     elseif Framework == 'esx' then
-                        local success, result = pcall(function()
+                        success, result = pcall(function()
                             return MySQL.query.await('SELECT firstname, lastname FROM users WHERE identifier = ?', {memberId})
                         end)
                         
@@ -869,43 +625,33 @@ lib.callback.register('Renewed-Banking:server:getMemberManagement', function(sou
                             end
                         end
                     end
-                    print("    Found offline: " .. tostring(memberName))
                 end
                 
                 retData.members[memberId] = memberName
-                print("    Added member: " .. tostring(memberId) .. " = " .. tostring(memberName))
-            else
-                print("  Skipping creator: " .. tostring(memberId))
             end
         end
-    else
-        print("No auth table found for account")
     end
-
-    print("=== FINAL RESULT ===")
-    local memberCount = 0
-    for id, name in pairs(retData.members) do
-        memberCount = memberCount + 1
-        print("  Member " .. memberCount .. ": " .. tostring(id) .. " = " .. tostring(name))
-    end
-    print("Total members returning: " .. memberCount)
-    print("=== END GET MEMBER MANAGEMENT ===")
 
     return retData
 end)
 
 RegisterNetEvent("Renewed-Banking:server:viewMemberManagement", function(data)
     local Player = GetPlayerObject(source)
+    if not Player then return end
+    
     local account = data.account
+    if not account or not cachedAccounts[account] then return end
+    
     local retData = {
         account = account,
         members = {}
     }
     local cid = GetIdentifier(Player)
+    if not cid then return end
 
     for k,_ in pairs(cachedAccounts[account].auth) do
         local Player2 = getPlayerData(source, k)
-        if cid ~= GetIdentifier(Player2) then
+        if Player2 and cid ~= GetIdentifier(Player2) then
             retData.members[k] = GetCharacterName(Player2)
         end
     end
@@ -915,13 +661,20 @@ end)
 
 RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, member)
     local Player = GetPlayerObject(source)
+    if not Player then
+        return
+    end
+    
     local playerCid = GetIdentifier(Player)
+    if not playerCid then
+        return
+    end
 
-    -- Validate inputs
-    if not account or not member then
+    -- Validate inputs - Check for null/empty values
+    if not account or not member or account == "" or member == "" or account == nil or member == nil then
         Notify(source, {
-            title = locale("bank_name") or "Banking", 
-            description = "Invalid account or member ID provided", 
+            title = "Banking",
+            message = "Invalid account or member ID provided",
             type = "error"
         })
         return
@@ -933,23 +686,31 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         member = string.upper(member)
     end
 
-    print("DEBUG: Looking for CID: " .. tostring(member) .. " (Framework: " .. tostring(Framework) .. ")")
+    -- Additional validation after cleanup
+    if member == "" or member == nil then
+        Notify(source, {
+            title = "Banking",
+            message = "Invalid member ID after processing",
+            type = "error"
+        })
+        return
+    end
 
     -- Check if trying to add their own ID
     if member == playerCid then
         Notify(source, {
-            title = locale("bank_name") or "Banking", 
-            description = "You cannot add yourself to the account", 
+            title = "Banking",
+            message = "You cannot add yourself to the account",
             type = "error"
         })
         return
     end
 
     -- Check if the account exists
-    if not cachedAccounts[account] then
+    if not cachedAccounts or not cachedAccounts[account] then
         Notify(source, {
-            title = locale("bank_name") or "Banking", 
-            description = "Account does not exist", 
+            title = "Banking",
+            message = "Account does not exist",
             type = "error"
         })
         return
@@ -957,10 +718,9 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
 
     -- Check if the player is the account creator
     if playerCid ~= cachedAccounts[account].creator then 
-        print((locale and locale("illegal_action", GetPlayerName(source))) or ("Illegal action by " .. GetPlayerName(source))) 
         Notify(source, {
-            title = locale("bank_name") or "Banking", 
-            description = "You are not authorized to add members to this account", 
+            title = "Banking",
+            message = "You are not authorized to add members to this account",
             type = "error"
         })
         return 
@@ -975,64 +735,70 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
     Player2 = GetPlayerObjectFromID(member)
     if Player2 then
         playerExists = true
-        playerName = GetCharacterName(Player2)
-        print("DEBUG: Found online player: " .. tostring(playerName))
+        local name = GetCharacterName(Player2)
+        if name then
+            playerName = tostring(name)
+        end
     else
-        print("DEBUG: Player not online, checking database...")
         -- Check if the CID exists in the database (for offline players)
-        local result = nil
         
         if Framework == 'qb' or Framework == 'qbx' then
             -- For QB frameworks, check players table
-            result = MySQL.query.await('SELECT citizenid, charinfo FROM players WHERE citizenid = ?', {member})
-            print("DEBUG: QB Query result count: " .. tostring(result and #result or 0))
+            local success, result = pcall(function()
+                return MySQL.query.await('SELECT citizenid, charinfo FROM players WHERE citizenid = ?', {member})
+            end)
             
-            if result and #result > 0 then
+            if success and result and #result > 0 then
                 playerExists = true
+                
                 -- Try to get character name
-                if result[1].charinfo and result[1].charinfo ~= '' then
-                    local success, charinfo = pcall(json.decode, result[1].charinfo)
-                    if success and charinfo and charinfo.firstname and charinfo.lastname then
+                if result[1] and result[1].charinfo and result[1].charinfo ~= '' then
+                    local charSuccess, charinfo = pcall(json.decode, result[1].charinfo)
+                    if charSuccess and charinfo and charinfo.firstname and charinfo.lastname then
                         playerName = tostring(charinfo.firstname) .. " " .. tostring(charinfo.lastname)
                     end
                 end
-                print("DEBUG: Found offline QB player: " .. tostring(playerName))
             end
         elseif Framework == 'esx' then
             -- For ESX, check users table
-            result = MySQL.query.await('SELECT identifier, firstname, lastname FROM users WHERE identifier = ?', {member})
-            print("DEBUG: ESX Query result count: " .. tostring(result and #result or 0))
+            local success, result = pcall(function()
+                return MySQL.query.await('SELECT identifier, firstname, lastname FROM users WHERE identifier = ?', {member})
+            end)
             
-            if result and #result > 0 then
+            if success and result and #result > 0 then
                 playerExists = true
-                if result[1].firstname and result[1].lastname then
+                
+                if result[1] and result[1].firstname and result[1].lastname then
                     playerName = tostring(result[1].firstname) .. " " .. tostring(result[1].lastname)
                 end
-                print("DEBUG: Found offline ESX player: " .. tostring(playerName))
             end
-        else
-            print("DEBUG: Unknown framework: " .. tostring(Framework))
         end
     end
 
-    print("DEBUG: Player exists: " .. tostring(playerExists))
-
-    -- If CID doesn't exist at all
+    -- If CID doesn't exist, stop here and show error
     if not playerExists then
-        Notify(source, {
-            title = locale("bank_name") or "Banking", 
-            description = "Citizen ID '" .. tostring(member) .. "' does not exist in the database", 
+        local errorMessage = "Citizen ID '" .. tostring(member) .. "' does not exist in the database"
+        
+        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
+            message = errorMessage,
+            title = "Banking",
             type = "error"
         })
-        print("DEBUG: CID not found in database: " .. tostring(member))
+        
+        Notify(source, {
+            title = "Banking",
+            message = errorMessage,
+            type = "error"
+        })
+        
         return
     end
 
     -- Check if player is already a member
-    if cachedAccounts[account].auth and cachedAccounts[account].auth[member] then
-        Notify(source, {
-            title = locale("bank_name") or "Banking", 
-            description = "Player is already a member of this account", 
+    if cachedAccounts[account] and cachedAccounts[account].auth and cachedAccounts[account].auth[member] then
+        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
+            message = "Player is already a member of this account",
+            title = "Banking",
             type = "error"
         })
         return
@@ -1040,23 +806,22 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
 
     -- Initialize player cache if it doesn't exist (for offline players)
     if not cachedPlayers[member] then
-        print("DEBUG: Initializing player cache for: " .. tostring(member))
         UpdatePlayerAccount(member)
     end
 
     -- Add the account to the player's account list
     if cachedPlayers[member] and cachedPlayers[member].accounts then
-        cachedPlayers[member].accounts[#cachedPlayers[member].accounts+1] = account
+        table.insert(cachedPlayers[member].accounts, account)
     end
 
     -- Build the auth array for database update
     local auth = {}
-    if cachedAccounts[account].auth then
+    if cachedAccounts[account] and cachedAccounts[account].auth then
         for k in pairs(cachedAccounts[account].auth) do 
-            auth[#auth+1] = k 
+            table.insert(auth, k)
         end
     end
-    auth[#auth+1] = member
+    table.insert(auth, member)
     
     -- Update the cached account auth
     if not cachedAccounts[account].auth then
@@ -1064,25 +829,46 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
     end
     cachedAccounts[account].auth[member] = true
     
-    -- Update the database
-    MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(auth), account})
+    -- Update the database with proper null checks
+    local success, err = pcall(function()
+        if account and account ~= "" and auth then
+            MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(auth), account})
+        else
+            error("Invalid parameters for database update")
+        end
+    end)
     
-    print("DEBUG: Successfully added " .. tostring(member) .. " to account " .. tostring(account))
+    if not success then
+        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
+            message = "Database error occurred: " .. tostring(err),
+            title = "Banking",
+            type = "error"
+        })
+        return
+    end
     
-    -- Notify success
-    Notify(source, {
-        title = locale("bank_name") or "Banking", 
-        description = "Member " .. tostring(playerName) .. " (" .. tostring(member) .. ") added successfully", 
+    -- Success notification
+    TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
+        message = "Member " .. tostring(playerName) .. " (" .. tostring(member) .. ") added successfully",
+        title = "Banking",
         type = "success"
     })
     
     -- Notify the added player if they're online
     if Player2 then
-        local targetSource = Player2.source or Player2.PlayerId or (Player2.PlayerData and Player2.PlayerData.source)
+        local targetSource = nil
+        if Player2.source then
+            targetSource = Player2.source
+        elseif Player2.PlayerId then
+            targetSource = Player2.PlayerId
+        elseif Player2.PlayerData and Player2.PlayerData.source then
+            targetSource = Player2.PlayerData.source
+        end
+        
         if targetSource then
-            Notify(targetSource, {
-                title = locale("bank_name") or "Banking", 
-                description = "You have been added to a shared account: " .. tostring(account), 
+            TriggerClientEvent("Renewed-Banking:client:sendNotification", targetSource, {
+                message = "You have been added to a shared account: " .. tostring(account),
+                title = "Banking",
                 type = "success"
             })
         end
@@ -1092,22 +878,29 @@ end)
 RegisterNetEvent('Renewed-Banking:server:removeAccountMember', function(data)
     local Player = GetPlayerObject(source)
     if not Player then
-        print("ERROR: Could not get player object for removeAccountMember")
         return
     end
 
     local playerCid = GetIdentifier(Player)
-    local account = data.account
-    local memberToRemove = data.cid
+    if not playerCid then
+        return
+    end
+    
+    local account = data and data.account
+    local memberToRemove = data and data.cid
 
-    print("=== REMOVE MEMBER PROCESS ===")
-    print("Account: " .. tostring(account))
-    print("Member to remove: " .. tostring(memberToRemove))
-    print("Requesting player: " .. tostring(playerCid))
+    -- Validate inputs
+    if not account or not memberToRemove or account == "" or memberToRemove == "" then
+        Notify(source, {
+            title = "Banking",
+            message = "Invalid account or member ID provided",
+            type = "error"
+        })
+        return
+    end
 
     -- Check if account exists
     if not cachedAccounts[account] then
-        print("ERROR: Account does not exist")
         Notify(source, {
             title = "Banking",
             message = "Account does not exist",
@@ -1118,7 +911,6 @@ RegisterNetEvent('Renewed-Banking:server:removeAccountMember', function(data)
 
     -- Check if player is the account creator
     if playerCid ~= cachedAccounts[account].creator then 
-        print("ERROR: Player not authorized - Creator: " .. tostring(cachedAccounts[account].creator))
         Notify(source, {
             title = "Banking",
             message = "You are not authorized to remove members from this account",
@@ -1129,7 +921,6 @@ RegisterNetEvent('Renewed-Banking:server:removeAccountMember', function(data)
 
     -- Check if member exists in auth list
     if not cachedAccounts[account].auth or not cachedAccounts[account].auth[memberToRemove] then
-        print("ERROR: Member not found in account auth list")
         Notify(source, {
             title = "Banking",
             message = "Member not found in account",
@@ -1155,29 +946,28 @@ RegisterNetEvent('Renewed-Banking:server:removeAccountMember', function(data)
             end
         end
         cachedPlayers[memberToRemove].accounts = newAccountList
-        print("Removed account from player's cached account list")
     end
 
     -- Update cached account auth
     cachedAccounts[account].auth[memberToRemove] = nil
     
-    -- Update database
+    -- Update database with proper null checks
     local success, err = pcall(function()
-        MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(newAuth), account})
+        if account and account ~= "" and newAuth then
+            MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(newAuth), account})
+        else
+            error("Invalid parameters for database update")
+        end
     end)
     
     if not success then
-        print("ERROR: Database update failed: " .. tostring(err))
         Notify(source, {
             title = "Banking",
-            message = "Database error occurred",
+            message = "Database error occurred: " .. tostring(err),
             type = "error"
         })
         return
     end
-
-    print("SUCCESS: Member removed from account")
-    print("New auth list: " .. json.encode(newAuth))
 
     Notify(source, {
         title = "Banking",
@@ -1200,15 +990,22 @@ RegisterNetEvent('Renewed-Banking:server:removeAccountMember', function(data)
 end)
 
 RegisterNetEvent('Renewed-Banking:server:deleteAccount', function(data)
-    local account = data.account
     local Player = GetPlayerObject(source)
+    if not Player then return end
+    
+    local account = data and data.account
+    if not account or account == "" then return end
+    
     local cid = GetIdentifier(Player)
+    if not cid then return end
 
     cachedAccounts[account] = nil
 
-    for k=1, #cachedPlayers[cid].accounts do
-        if cachedPlayers[cid].accounts[k] == account then
-            cachedPlayers[cid].accounts[k] = nil
+    if cachedPlayers[cid] and cachedPlayers[cid].accounts then
+        for k=1, #cachedPlayers[cid].accounts do
+            if cachedPlayers[cid].accounts[k] == account then
+                cachedPlayers[cid].accounts[k] = nil
+            end
         end
     end
 
@@ -1263,7 +1060,7 @@ local function updateAccountName(account, newName, src)
         local Player2 = GetPlayerObject(id)
         if not Player2 then goto Skip end
         local cid = GetIdentifier(Player2)
-        if #cachedPlayers[cid].accounts >= 1 then
+        if cid and cachedPlayers[cid] and cachedPlayers[cid].accounts and #cachedPlayers[cid].accounts >= 1 then
             for k=1, #cachedPlayers[cid].accounts do
                 if cachedPlayers[cid].accounts[k] == account then
                     table.remove(cachedPlayers[cid].accounts, k)
@@ -1337,7 +1134,6 @@ end
 
 local function addAccountMember(account, member)
     if not account or not member then 
-        print("addAccountMember: Missing account or member parameter")
         return false
     end
 
@@ -1371,12 +1167,10 @@ local function addAccountMember(account, member)
     end
 
     if not playerExists then
-        print("addAccountMember: Citizen ID does not exist in database: " .. tostring(member))
         return false
     end
     
     if cachedAccounts[account].auth[member] then
-        print("addAccountMember: Player is already a member of account: " .. account)
         return false
     end
 
@@ -1398,7 +1192,6 @@ local function addAccountMember(account, member)
     
     MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(auth), account})
     
-    print("addAccountMember: Successfully added " .. member .. " to account " .. account)
     return true
 end
 
@@ -1409,6 +1202,7 @@ local function removeAccountMember(account, member)
     if not cachedAccounts[account] then print(locale("invalid_account", account)) return end
 
     local targetCID = GetIdentifier(Player2)
+    if not targetCID then return end
 
     local tmp = {}
     for k in pairs(cachedAccounts[account].auth) do
@@ -1433,63 +1227,6 @@ local function removeAccountMember(account, member)
 
     MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?',{json.encode(tmp), account})
 end
-
--- Debug command to check account data
-RegisterCommand('checkaccount', function(source, args)
-    if source == 0 then -- Server console only
-        local accountName = args[1]
-        if not accountName then
-            print("Usage: checkaccount <account_name>")
-            return
-        end
-        
-        print("=== ACCOUNT DEBUG: " .. accountName .. " ===")
-        
-        -- Check cached data
-        if cachedAccounts[accountName] then
-            print("CACHED DATA:")
-            print("  ID: " .. tostring(cachedAccounts[accountName].id))
-            print("  Name: " .. tostring(cachedAccounts[accountName].name))
-            print("  Creator: " .. tostring(cachedAccounts[accountName].creator))
-            print("  Amount: " .. tostring(cachedAccounts[accountName].amount))
-            
-            if cachedAccounts[accountName].auth then
-                print("  Auth members:")
-                for k, v in pairs(cachedAccounts[accountName].auth) do
-                    print("    " .. tostring(k) .. " = " .. tostring(v))
-                end
-            else
-                print("  Auth: nil")
-            end
-        else
-            print("CACHED DATA: Account not found")
-        end
-        
-        -- Check database data
-        local result = MySQL.query.await('SELECT * FROM bank_accounts_new WHERE id = ?', {accountName})
-        if result and #result > 0 then
-            print("DATABASE DATA:")
-            print("  ID: " .. tostring(result[1].id))
-            print("  Amount: " .. tostring(result[1].amount))
-            print("  Creator: " .. tostring(result[1].creator))
-            print("  Auth (raw): " .. tostring(result[1].auth))
-            
-            local authData = json.decode(result[1].auth)
-            if authData then
-                print("  Auth (decoded):")
-                for i, member in ipairs(authData) do
-                    print("    " .. i .. ": " .. tostring(member))
-                end
-            else
-                print("  Auth: Failed to decode")
-            end
-        else
-            print("DATABASE DATA: Account not found")
-        end
-        
-        print("=== END ACCOUNT DEBUG ===")
-    end
-end, true)
 
 -- Cash Command
 lib.addCommand('givecash', {
