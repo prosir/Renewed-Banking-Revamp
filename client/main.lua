@@ -318,7 +318,39 @@ RegisterNUICallback('Renewed-Banking:client:createNewAccount', function(data, cb
 end)
 
 RegisterNUICallback('Renewed-Banking:client:viewMemberManagement', function(data, cb)
-    TriggerServerEvent('Renewed-Banking:server:viewMemberManagement', data)
+    print("DEBUG: Client received viewMemberManagement request")
+    print("DEBUG: Data received: " .. (data and json.encode(data) or "nil"))
+    
+    if data and data.account then
+        print("DEBUG: Sending to server for account: " .. tostring(data.account))
+        TriggerServerEvent('Renewed-Banking:server:viewMemberManagement', data)
+    else
+        print("ERROR: No account data provided")
+    end
+    
+    cb('ok')
+end)
+
+-- Also register the alternative callback names the UI might be using
+RegisterNUICallback('viewMemberManagement', function(data, cb)
+    print("DEBUG: Alternative callback - viewMemberManagement")
+    print("DEBUG: Data: " .. (data and json.encode(data) or "nil"))
+    
+    if data and data.account then
+        TriggerServerEvent('Renewed-Banking:server:viewMemberManagement', data)
+    end
+    
+    cb('ok')
+end)
+
+RegisterNUICallback('getAccountMembers', function(data, cb)
+    print("DEBUG: Alternative callback - getAccountMembers")
+    print("DEBUG: Data: " .. (data and json.encode(data) or "nil"))
+    
+    if data and data.account then
+        TriggerServerEvent('Renewed-Banking:server:viewMemberManagement', data)
+    end
+    
     cb('ok')
 end)
 
