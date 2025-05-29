@@ -670,7 +670,6 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         return
     end
 
-    -- Validate inputs - Check for null/empty values
     if not account or not member or account == "" or member == "" or account == nil or member == nil then
         Notify(source, {
             title = "Banking",
@@ -680,13 +679,11 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         return
     end
 
-    -- Clean up the member ID (remove spaces, make uppercase for QB frameworks)
     member = string.gsub(tostring(member), "%s+", "")
     if Framework == 'qb' or Framework == 'qbx' then
         member = string.upper(member)
     end
 
-    -- Additional validation after cleanup
     if member == "" or member == nil then
         Notify(source, {
             title = "Banking",
@@ -696,7 +693,6 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         return
     end
 
-    -- Check if trying to add their own ID
     if member == playerCid then
         Notify(source, {
             title = "Banking",
@@ -706,7 +702,6 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         return
     end
 
-    -- Check if the account exists
     if not cachedAccounts or not cachedAccounts[account] then
         Notify(source, {
             title = "Banking",
@@ -716,7 +711,6 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         return
     end
 
-    -- Check if the player is the account creator
     if playerCid ~= cachedAccounts[account].creator then 
         Notify(source, {
             title = "Banking",
@@ -726,12 +720,11 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         return 
     end
 
-    -- Check if the CID exists in the database and get player info
     local playerExists = false
     local Player2 = nil
     local playerName = "Unknown Player"
+    local targetSource = nil
     
-    -- First try to get online player
     Player2 = GetPlayerObjectFromID(member)
     if Player2 then
         playerExists = true
@@ -739,11 +732,18 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         if name then
             playerName = tostring(name)
         end
-    else
-        -- Check if the CID exists in the database (for offline players)
         
+        if Player2.source then
+            targetSource = Player2.source
+        elseif Player2.PlayerId then
+            targetSource = Player2.PlayerId
+        elseif Player2.PlayerData and Player2.PlayerData.source then
+            targetSource = Player2.PlayerData.source
+        end
+    end
+    
+    if not playerExists then
         if Framework == 'qb' or Framework == 'qbx' then
-            -- For QB frameworks, check players table
             local success, result = pcall(function()
                 return MySQL.query.await('SELECT citizenid, charinfo FROM players WHERE citizenid = ?', {member})
             end)
@@ -751,7 +751,6 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
             if success and result and #result > 0 then
                 playerExists = true
                 
-                -- Try to get character name
                 if result[1] and result[1].charinfo and result[1].charinfo ~= '' then
                     local charSuccess, charinfo = pcall(json.decode, result[1].charinfo)
                     if charSuccess and charinfo and charinfo.firstname and charinfo.lastname then
@@ -760,7 +759,6 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
                 end
             end
         elseif Framework == 'esx' then
-            -- For ESX, check users table
             local success, result = pcall(function()
                 return MySQL.query.await('SELECT identifier, firstname, lastname FROM users WHERE identifier = ?', {member})
             end)
@@ -775,46 +773,32 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
         end
     end
 
-    -- If CID doesn't exist, stop here and show error
     if not playerExists then
-        local errorMessage = "Citizen ID '" .. tostring(member) .. "' does not exist in the database"
-        
-        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
-            message = errorMessage,
-            title = "Banking",
-            type = "error"
-        })
-        
         Notify(source, {
             title = "Banking",
-            message = errorMessage,
+            message = "Citizen ID '" .. tostring(member) .. "' does not exist in the database",
             type = "error"
         })
-        
         return
     end
 
-    -- Check if player is already a member
     if cachedAccounts[account] and cachedAccounts[account].auth and cachedAccounts[account].auth[member] then
-        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
-            message = "Player is already a member of this account",
+        Notify(source, {
             title = "Banking",
+            message = "Player is already a member of this account",
             type = "error"
         })
         return
     end
 
-    -- Initialize player cache if it doesn't exist (for offline players)
     if not cachedPlayers[member] then
         UpdatePlayerAccount(member)
     end
 
-    -- Add the account to the player's account list
     if cachedPlayers[member] and cachedPlayers[member].accounts then
         table.insert(cachedPlayers[member].accounts, account)
     end
 
-    -- Build the auth array for database update
     local auth = {}
     if cachedAccounts[account] and cachedAccounts[account].auth then
         for k in pairs(cachedAccounts[account].auth) do 
@@ -823,13 +807,11 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
     end
     table.insert(auth, member)
     
-    -- Update the cached account auth
     if not cachedAccounts[account].auth then
         cachedAccounts[account].auth = {}
     end
     cachedAccounts[account].auth[member] = true
     
-    -- Update the database with proper null checks
     local success, err = pcall(function()
         if account and account ~= "" and auth then
             MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(auth), account})
@@ -839,36 +821,26 @@ RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, me
     end)
     
     if not success then
-        TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
-            message = "Database error occurred: " .. tostring(err),
+        Notify(source, {
             title = "Banking",
+            message = "Database error occurred: " .. tostring(err),
             type = "error"
         })
         return
     end
     
-    -- Success notification
-    TriggerClientEvent("Renewed-Banking:client:sendNotification", source, {
-        message = "Member " .. tostring(playerName) .. " (" .. tostring(member) .. ") added successfully",
+    Notify(source, {
         title = "Banking",
+        message = "Member " .. tostring(playerName) .. " (" .. tostring(member) .. ") added successfully",
         type = "success"
     })
     
-    -- Notify the added player if they're online
-    if Player2 then
-        local targetSource = nil
-        if Player2.source then
-            targetSource = Player2.source
-        elseif Player2.PlayerId then
-            targetSource = Player2.PlayerId
-        elseif Player2.PlayerData and Player2.PlayerData.source then
-            targetSource = Player2.PlayerData.source
-        end
-        
-        if targetSource then
-            TriggerClientEvent("Renewed-Banking:client:sendNotification", targetSource, {
-                message = "You have been added to a shared account: " .. tostring(account),
+    if Player2 and targetSource and targetSource > 0 then
+        local targetPlayer = GetPlayerPed(targetSource)
+        if targetPlayer and targetPlayer > 0 then
+            Notify(targetSource, {
                 title = "Banking",
+                message = "You have been added to a shared account: " .. tostring(account),
                 type = "success"
             })
         end
@@ -969,22 +941,36 @@ RegisterNetEvent('Renewed-Banking:server:removeAccountMember', function(data)
         return
     end
 
+    -- Success notification to requesting player
     Notify(source, {
         title = "Banking",
         message = "Member removed successfully",
         type = "success"
     })
 
-    -- Notify the removed player if they're online
+    -- Only notify the removed player if they're online
     local RemovedPlayer = GetPlayerObjectFromID(memberToRemove)
     if RemovedPlayer then
-        local targetSource = RemovedPlayer.source or RemovedPlayer.PlayerId or (RemovedPlayer.PlayerData and RemovedPlayer.PlayerData.source)
-        if targetSource then
-            Notify(targetSource, {
-                title = "Banking",
-                message = "You have been removed from shared account: " .. tostring(account),
-                type = "info"
-            })
+        local targetSource = nil
+        
+        if RemovedPlayer.source then
+            targetSource = RemovedPlayer.source
+        elseif RemovedPlayer.PlayerId then
+            targetSource = RemovedPlayer.PlayerId
+        elseif RemovedPlayer.PlayerData and RemovedPlayer.PlayerData.source then
+            targetSource = RemovedPlayer.PlayerData.source
+        end
+        
+        -- Only send notification if we have a valid target source
+        if targetSource and targetSource > 0 then
+            local targetPlayer = GetPlayerPed(targetSource)
+            if targetPlayer and targetPlayer > 0 then
+                Notify(targetSource, {
+                    title = "Banking",
+                    message = "You have been removed from shared account: " .. tostring(account),
+                    type = "info"
+                })
+            end
         end
     end
 end)
