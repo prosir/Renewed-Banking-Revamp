@@ -222,12 +222,6 @@ end
 
 --Misc Framework Events
 
--- We'll move this to main.lua since it depends on UpdatePlayerAccount
--- AddEventHandler('QBCore:Server:PlayerLoaded', function(Player)
---     local cid = Player.PlayerData.citizenid
---     UpdatePlayerAccount(cid)
--- end)
-
 RegisterNetEvent('esx:onPlayerDeath', function()
 	deadPlayers[source] = true
 end)
@@ -247,17 +241,3 @@ AddEventHandler('esx:playerDropped', function(playerId, reason)
 		deadPlayers[playerId] = nil
 	end
 end)
-
--- We'll move this to main.lua since it depends on UpdatePlayerAccount
--- AddEventHandler('onResourceStart', function(resourceName)
---     Wait(250)
---     if resourceName == GetCurrentResourceName() then
---         for _, v in ipairs(GetPlayers()) do
---             local Player = GetPlayerObject(v)
---             if Player then
---                 local cid = GetIdentifier(Player)
---                 UpdatePlayerAccount(cid)
---             end
---         end
---     end
--- end)

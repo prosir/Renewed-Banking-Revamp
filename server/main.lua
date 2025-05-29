@@ -1,6 +1,9 @@
 local cachedAccounts = {}
 local cachedPlayers = {}
 
+-- Get Framework from framework.lua or detect it here
+local Framework = GetResourceState('es_extended') == 'started' and 'esx' or GetResourceState('qbx_core') == 'started' and 'qbx' or GetResourceState('qb-core') == 'started' and 'qb' or 'Unknown'
+
 function UpdatePlayerAccount(cid)
     local p = promise.new()
     MySQL.query('SELECT * FROM player_transactions WHERE id = ?', {cid}, function(account)
@@ -23,13 +26,12 @@ function UpdatePlayerAccount(cid)
     return Citizen.Await(p)
 end
 
--- Add the QBCore player loaded event here
+-- Framework Events
 AddEventHandler('QBCore:Server:PlayerLoaded', function(Player)
     local cid = Player.PlayerData.citizenid
     UpdatePlayerAccount(cid)
 end)
 
--- Add the resource start event here
 AddEventHandler('onResourceStart', function(resourceName)
     Wait(250)
     if resourceName == GetCurrentResourceName() then
@@ -43,18 +45,20 @@ AddEventHandler('onResourceStart', function(resourceName)
     end
 end)
 
+-- Initialize cached accounts and create missing job/gang accounts
 CreateThread(function()
     Wait(500)
     if not LoadResourceFile("Renewed-Banking", 'web/public/build/bundle.js') or GetCurrentResourceName() ~= "Renewed-Banking" then
         error(locale("ui_not_built"))
         return StopResource("Renewed-Banking")
     end
+    
     local accounts = MySQL.query.await('SELECT * FROM bank_accounts_new', {})
     if accounts then
         for _,v in pairs (accounts) do
             local job = v.id
             v.auth = json.decode(v.auth)
-            cachedAccounts[job] = { --  cachedAccounts[#cachedAccounts+1]
+            cachedAccounts[job] = {
                 id = job,
                 type = locale("org"),
                 name = GetSocietyLabel(job),
@@ -71,6 +75,7 @@ CreateThread(function()
             end
         end
     end
+    
     local jobs, gangs = GetFrameworkGroups()
     local query = {}
     local function addCachedAccount(group)
@@ -87,6 +92,7 @@ CreateThread(function()
         query[#query + 1] = {"INSERT INTO bank_accounts_new (id, amount, transactions, auth, isFrozen, creator) VALUES (?, ?, ?, ?, ?, NULL) ",
         { group, cachedAccounts[group].amount, json.encode(cachedAccounts[group].transactions), json.encode({}), cachedAccounts[group].frozen }}
     end
+    
     for job in pairs(jobs) do
         if not cachedAccounts[job] then
             addCachedAccount(job)
@@ -102,12 +108,14 @@ CreateThread(function()
     end
 end)
 
+-- Utility Functions
 local function getBankData(source)
     local Player = GetPlayerObject(source)
     local bankData = {}
     local cid = GetIdentifier(Player)
     if not cachedPlayers[cid] then UpdatePlayerAccount(cid) end
     local funds = GetFunds(Player)
+    
     bankData[#bankData+1] = {
         id = cid,
         type = locale("personal"),
@@ -149,12 +157,6 @@ local function getBankData(source)
     return bankData
 end
 
--- lib.callback.register('Renewed-Banking:server:initalizeBanking', function(source)
---     local bankData = getBankData(source)
---     return bankData
--- end)
-
--- Events
 local function genTransactionID()
     local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
     return string.gsub(template, '[xy]', function(c)
@@ -192,6 +194,7 @@ local function handleTransaction(account, title, amount, message, issuer, receiv
         issuer = issuer,
         time = os.time()
     }
+    
     if cachedAccounts[account] then
         table.insert(cachedAccounts[account].transactions, 1, transaction)
         local transactions = json.encode(cachedAccounts[account].transactions)
@@ -208,31 +211,11 @@ local function handleTransaction(account, title, amount, message, issuer, receiv
         print(locale("invalid_account", account))
     end
     return transaction
-end exports("handleTransaction", handleTransaction)
-
-function GetAccountMoney(account)
-    if not cachedAccounts[account] then
-        locale("invalid_account", account)
-        return false
-    end
-    return cachedAccounts[account].amount
 end
-exports('getAccountMoney', GetAccountMoney)
 
 local function updateBalance(account)
     MySQL.prepare("UPDATE bank_accounts_new SET amount = ? WHERE id = ?",{ cachedAccounts[account].amount, account })
 end
-
-function AddAccountMoney(account, amount)
-    if not cachedAccounts[account] then
-        locale("invalid_account", account)
-        return false
-    end
-    cachedAccounts[account].amount = cachedAccounts[account].amount + amount
-    updateBalance(account)
-    return true
-end
-exports('addAccountMoney', AddAccountMoney)
 
 local function getPlayerData(source, id)
     local Player = source and GetPlayerObject(source)
@@ -247,19 +230,60 @@ local function getPlayerData(source, id)
     return Player
 end
 
--- Update the server-side notification function to use the UI notification system
+-- Notification function using UI system
 function Notify(src, settings)
-    -- Convert ox_lib notification format to our UI notification format
     local notification = {
         message = settings.description,
         title = settings.title,
         type = settings.type
     }
-    
     TriggerClientEvent("Renewed-Banking:client:sendNotification", src, notification)
 end
 
--- Update deposit callback to use the new notification system
+-- Account Money Functions
+function GetAccountMoney(account)
+    if not cachedAccounts[account] then
+        locale("invalid_account", account)
+        return false
+    end
+    return cachedAccounts[account].amount
+end
+
+function AddAccountMoney(account, amount)
+    if not cachedAccounts[account] then
+        locale("invalid_account", account)
+        return false
+    end
+    cachedAccounts[account].amount = cachedAccounts[account].amount + amount
+    updateBalance(account)
+    return true
+end
+
+function RemoveAccountMoney(account, amount)
+    if not cachedAccounts[account] then
+        print(locale("invalid_account", account))
+        return false
+    end
+    if cachedAccounts[account].amount < amount then
+        print(locale("broke_account", account, amount))
+        return false
+    end
+    cachedAccounts[account].amount = cachedAccounts[account].amount - amount
+    updateBalance(account)
+    return true
+end
+
+local function getAccountTransactions(account)
+    if cachedAccounts[account] then
+        return cachedAccounts[account].transactions
+    elseif cachedPlayers[account] then
+        return cachedPlayers[account].transactions
+    end
+    print(locale("invalid_account", account))
+    return false
+end
+
+-- Banking Action Callbacks
 lib.callback.register('Renewed-Banking:server:deposit', function(source, data)
     local Player = GetPlayerObject(source)
     local amount = tonumber(data.amount)
@@ -294,23 +318,6 @@ lib.callback.register('Renewed-Banking:server:deposit', function(source, data)
     end
 end)
 
-function RemoveAccountMoney(account, amount)
-    if not cachedAccounts[account] then
-        print(locale("invalid_account", account))
-        return false
-    end
-    if cachedAccounts[account].amount < amount then
-        print(locale("broke_account", account, amount))
-        return false
-    end
-
-    cachedAccounts[account].amount = cachedAccounts[account].amount - amount
-    updateBalance(account)
-    return true
-end
-exports('removeAccountMoney', RemoveAccountMoney)
-
--- Update withdraw callback to use the new notification system
 lib.callback.register('Renewed-Banking:server:withdraw', function(source, data)
     local Player = GetPlayerObject(source)
     local amount = tonumber(data.amount)
@@ -349,7 +356,6 @@ lib.callback.register('Renewed-Banking:server:withdraw', function(source, data)
     end
 end)
 
--- Update transfer callback to use the new notification system
 lib.callback.register('Renewed-Banking:server:transfer', function(source, data)
     local Player = GetPlayerObject(source)
     local amount = tonumber(data.amount)
@@ -363,6 +369,7 @@ lib.callback.register('Renewed-Banking:server:transfer', function(source, data)
     end
     local name = GetCharacterName(Player)
     if not data.comment or data.comment == "" then data.comment = locale("comp_transaction", name, "transfered", amount) else sanitizeMessage(data.comment) end
+    
     if cachedAccounts[data.fromAccount] then
         if cachedAccounts[data.stateid] then
             local canTransfer = RemoveAccountMoney(data.fromAccount, amount)
@@ -449,6 +456,7 @@ lib.callback.register('Renewed-Banking:server:transfer', function(source, data)
     return bankData
 end)
 
+-- Account Management Events
 RegisterNetEvent('Renewed-Banking:server:createNewAccount', function(accountid)
     local Player = GetPlayerObject(source)
     if cachedAccounts[accountid] then return Notify(source, {title = locale("bank_name"), description = locale("account_taken"), type = "error"}) end
@@ -462,7 +470,6 @@ RegisterNetEvent('Renewed-Banking:server:createNewAccount', function(accountid)
         transactions = {},
         auth = { [cid] = true },
         creator = cid
-
     }
     cachedPlayers[cid].accounts[#cachedPlayers[cid].accounts+1] = accountid
     MySQL.insert("INSERT INTO bank_accounts_new (id, amount, transactions, auth, isFrozen, creator) VALUES (?, ?, ?, ?, ?, ?) ",{
@@ -470,8 +477,7 @@ RegisterNetEvent('Renewed-Banking:server:createNewAccount', function(accountid)
     })
 end)
 
--- Change the server event to a callback
-  lib.callback.register('Renewed-Banking:server:getPlayerAccounts', function(source)
+lib.callback.register('Renewed-Banking:server:getPlayerAccounts', function(source)
     local Player = GetPlayerObject(source)
     local cid = GetIdentifier(Player)
     local accounts = cachedPlayers[cid].accounts
@@ -484,12 +490,10 @@ end)
         end
     end
     return data
-  end)
-
+end)
 
 RegisterNetEvent("Renewed-Banking:server:viewMemberManagement", function(data)
     local Player = GetPlayerObject(source)
-
     local account = data.account
     local retData = {
         account = account,
@@ -509,21 +513,178 @@ end)
 
 RegisterNetEvent('Renewed-Banking:server:addAccountMember', function(account, member)
     local Player = GetPlayerObject(source)
+    local playerCid = GetIdentifier(Player)
 
-    if GetIdentifier(Player) ~= cachedAccounts[account].creator then print(locale("illegal_action", GetPlayerName(source))) return end
-    local Player2 = getPlayerData(source, member)
-    if not Player2 then return end
-
-    local targetCID = GetIdentifier(Player2)
-    if cachedPlayers[targetCID] then
-        cachedPlayers[targetCID].accounts[#cachedPlayers[targetCID].accounts+1] = account
+    -- Validate inputs
+    if not account or not member then
+        Notify(source, {
+            title = locale("bank_name") or "Banking", 
+            description = "Invalid account or member ID provided", 
+            type = "error"
+        })
+        return
     end
 
+    -- Clean up the member ID (remove spaces, make uppercase for QB frameworks)
+    member = string.gsub(tostring(member), "%s+", "")
+    if Framework == 'qb' or Framework == 'qbx' then
+        member = string.upper(member)
+    end
+
+    print("DEBUG: Looking for CID: " .. tostring(member) .. " (Framework: " .. tostring(Framework) .. ")")
+
+    -- Check if trying to add their own ID
+    if member == playerCid then
+        Notify(source, {
+            title = locale("bank_name") or "Banking", 
+            description = "You cannot add yourself to the account", 
+            type = "error"
+        })
+        return
+    end
+
+    -- Check if the account exists
+    if not cachedAccounts[account] then
+        Notify(source, {
+            title = locale("bank_name") or "Banking", 
+            description = "Account does not exist", 
+            type = "error"
+        })
+        return
+    end
+
+    -- Check if the player is the account creator
+    if playerCid ~= cachedAccounts[account].creator then 
+        print((locale and locale("illegal_action", GetPlayerName(source))) or ("Illegal action by " .. GetPlayerName(source))) 
+        Notify(source, {
+            title = locale("bank_name") or "Banking", 
+            description = "You are not authorized to add members to this account", 
+            type = "error"
+        })
+        return 
+    end
+
+    -- Check if the CID exists in the database and get player info
+    local playerExists = false
+    local Player2 = nil
+    local playerName = "Unknown Player"
+    
+    -- First try to get online player
+    Player2 = GetPlayerObjectFromID(member)
+    if Player2 then
+        playerExists = true
+        playerName = GetCharacterName(Player2)
+        print("DEBUG: Found online player: " .. tostring(playerName))
+    else
+        print("DEBUG: Player not online, checking database...")
+        -- Check if the CID exists in the database (for offline players)
+        local result = nil
+        
+        if Framework == 'qb' or Framework == 'qbx' then
+            -- For QB frameworks, check players table
+            result = MySQL.query.await('SELECT citizenid, charinfo FROM players WHERE citizenid = ?', {member})
+            print("DEBUG: QB Query result count: " .. tostring(result and #result or 0))
+            
+            if result and #result > 0 then
+                playerExists = true
+                -- Try to get character name
+                if result[1].charinfo and result[1].charinfo ~= '' then
+                    local success, charinfo = pcall(json.decode, result[1].charinfo)
+                    if success and charinfo and charinfo.firstname and charinfo.lastname then
+                        playerName = tostring(charinfo.firstname) .. " " .. tostring(charinfo.lastname)
+                    end
+                end
+                print("DEBUG: Found offline QB player: " .. tostring(playerName))
+            end
+        elseif Framework == 'esx' then
+            -- For ESX, check users table
+            result = MySQL.query.await('SELECT identifier, firstname, lastname FROM users WHERE identifier = ?', {member})
+            print("DEBUG: ESX Query result count: " .. tostring(result and #result or 0))
+            
+            if result and #result > 0 then
+                playerExists = true
+                if result[1].firstname and result[1].lastname then
+                    playerName = tostring(result[1].firstname) .. " " .. tostring(result[1].lastname)
+                end
+                print("DEBUG: Found offline ESX player: " .. tostring(playerName))
+            end
+        else
+            print("DEBUG: Unknown framework: " .. tostring(Framework))
+        end
+    end
+
+    print("DEBUG: Player exists: " .. tostring(playerExists))
+
+    -- If CID doesn't exist at all
+    if not playerExists then
+        Notify(source, {
+            title = locale("bank_name") or "Banking", 
+            description = "Citizen ID '" .. tostring(member) .. "' does not exist in the database", 
+            type = "error"
+        })
+        print("DEBUG: CID not found in database: " .. tostring(member))
+        return
+    end
+
+    -- Check if player is already a member
+    if cachedAccounts[account].auth and cachedAccounts[account].auth[member] then
+        Notify(source, {
+            title = locale("bank_name") or "Banking", 
+            description = "Player is already a member of this account", 
+            type = "error"
+        })
+        return
+    end
+
+    -- Initialize player cache if it doesn't exist (for offline players)
+    if not cachedPlayers[member] then
+        print("DEBUG: Initializing player cache for: " .. tostring(member))
+        UpdatePlayerAccount(member)
+    end
+
+    -- Add the account to the player's account list
+    if cachedPlayers[member] and cachedPlayers[member].accounts then
+        cachedPlayers[member].accounts[#cachedPlayers[member].accounts+1] = account
+    end
+
+    -- Build the auth array for database update
     local auth = {}
-    for k in pairs(cachedAccounts[account].auth) do auth[#auth+1] = k end
-    auth[#auth+1] = targetCID
-    cachedAccounts[account].auth[targetCID] = true
-    MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?',{json.encode(auth), account})
+    if cachedAccounts[account].auth then
+        for k in pairs(cachedAccounts[account].auth) do 
+            auth[#auth+1] = k 
+        end
+    end
+    auth[#auth+1] = member
+    
+    -- Update the cached account auth
+    if not cachedAccounts[account].auth then
+        cachedAccounts[account].auth = {}
+    end
+    cachedAccounts[account].auth[member] = true
+    
+    -- Update the database
+    MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(auth), account})
+    
+    print("DEBUG: Successfully added " .. tostring(member) .. " to account " .. tostring(account))
+    
+    -- Notify success
+    Notify(source, {
+        title = locale("bank_name") or "Banking", 
+        description = "Member " .. tostring(playerName) .. " (" .. tostring(member) .. ") added successfully", 
+        type = "success"
+    })
+    
+    -- Notify the added player if they're online
+    if Player2 then
+        local targetSource = Player2.source or Player2.PlayerId or (Player2.PlayerData and Player2.PlayerData.source)
+        if targetSource then
+            Notify(targetSource, {
+                title = locale("bank_name") or "Banking", 
+                description = "You have been added to a shared account: " .. tostring(account), 
+                type = "success"
+            })
+        end
+    end
 end)
 
 RegisterNetEvent('Renewed-Banking:server:removeAccountMember', function(data)
@@ -571,6 +732,7 @@ RegisterNetEvent('Renewed-Banking:server:deleteAccount', function(data)
     MySQL.update("DELETE FROM `bank_accounts_new` WHERE id=:id", { id = account })
 end)
 
+-- Account Name Change
 local find = string.find
 local sub = string.sub
 local function split(str, delimiter)
@@ -585,7 +747,6 @@ local function split(str, delimiter)
     result[#result + 1] = sub(str, from)
     return result
 end
-
 
 local function updateAccountName(account, newName, src)
     if not account or not newName then return false end
@@ -635,33 +796,22 @@ end
 
 RegisterNetEvent('Renewed-Banking:server:changeAccountName', function(account, newName)
     updateAccountName(account, newName, source)
-end) exports("changeAccountName", updateAccountName)-- Should only use this on very secure backends to avoid anyone using this as this is a server side ONLY export --
+end)
 
---- Retrieves a cached job account if it exists.
----@param jobName string The name of the job whose account is being retrieved.
----@return table|nil account Returns the job account if it exists, otherwise `nil`.
+-- Job Account Management
 function GetJobAccount(jobName)
     if type(jobName) ~= "string" or jobName == "" then
         error(("^5[%s]^7-^1[ERROR]^7 %s"):format(GetInvokingResource(), "Invalid job name: expected a non-empty string"))
     end
-    return cachedAccounts[jobName] or nil -- Returns account if found, otherwise nil
+    return cachedAccounts[jobName] or nil
 end
-exports('GetJobAccount', GetJobAccount)
 
---- Creates a shared job account for an organization/society.
---- @param job table A table containing job account details:
----        job.name string - The unique identifier for the job (e.g., "mechanic", "police").
----        job.label string - The display name/label for the job (e.g., "Mechanic", "Police Department").
---- @param initialBalance number? The starting balance of the account. Default is 0.
---- @return table Returns the account table if found or successfully created. This function may raise an error if validation or database insertion fails.
 local function CreateJobAccount(job, initialBalance)
     local currentResourceName = GetInvokingResource()
 
-    -- Validate input parameters
     if type(job) ~= "table" then
         error(("^5[%s]^7-^1[ERROR]^7 %s"):format(currentResourceName, "Invalid parameter: expected a table (job)"))
     end
-
 
     if type(job.name) ~= "string" or job.name == "" then
         error(("^5[%s]^7-^1[ERROR]^7 %s"):format(currentResourceName, "Invalid job name: expected a non-empty string"))
@@ -671,12 +821,10 @@ local function CreateJobAccount(job, initialBalance)
         error(("^5[%s]^7-^1[ERROR]^7 %s"):format(currentResourceName, "Invalid job label: expected a non-empty string"))
     end
     
-    -- Check if account already exists
     if cachedAccounts[job.name] then
         return cachedAccounts[job.name]
     end
 
-    -- Create the job account in cache
     cachedAccounts[job.name] = {
         id = job.name,
         type = locale("org"),
@@ -691,42 +839,85 @@ local function CreateJobAccount(job, initialBalance)
     local insertId = MySQL.insert.await("INSERT INTO bank_accounts_new (id, amount, transactions, auth, isFrozen, creator) VALUES (?, ?, ?, ?, ?, NULL)", {
         job.name,
         cachedAccounts[job.name].amount,
-        json.encode(cachedAccounts[job.name].transactions), -- Convert transactions to JSON
-        json.encode(cachedAccounts[job.name].auth), -- Convert auth list to JSON
+        json.encode(cachedAccounts[job.name].transactions),
+        json.encode(cachedAccounts[job.name].auth),
         cachedAccounts[job.name].frozen
     })
 
-    -- Handle potential database errors
     if not insertId then
-	cachedAccounts[job.name] = nil
+        cachedAccounts[job.name] = nil
         error(("^5[%s]^7-^1[ERROR]^7 %s"):format(currentResourceName, "Database error"))
     end
 
     return cachedAccounts[job.name]
 end
-exports("CreateJobAccount", CreateJobAccount)
 
 local function addAccountMember(account, member)
-    if not account or not member then return end
+    if not account or not member then 
+        print("addAccountMember: Missing account or member parameter")
+        return false
+    end
 
-    if not cachedAccounts[account] then print(locale("invalid_account", account)) return end
+    member = string.gsub(member, "%s+", "")
+    if Framework == 'qb' or Framework == 'qbx' then
+        member = string.upper(member)
+    end
 
-    local Player2 = getPlayerData(false, member)
-    if not Player2 then return end
+    if not cachedAccounts[account] then 
+        print(locale("invalid_account", account)) 
+        return false
+    end
 
-    local targetCID = GetIdentifier(Player2)
-    if cachedPlayers[targetCID] then
-        cachedPlayers[targetCID].accounts[#cachedPlayers[targetCID].accounts+1] = account
+    local playerExists = false
+    local Player2 = nil
+    
+    Player2 = GetPlayerObjectFromID(member)
+    if Player2 then
+        playerExists = true
+    else
+        local result = nil
+        if Framework == 'qb' or Framework == 'qbx' then
+            result = MySQL.query.await('SELECT citizenid FROM players WHERE citizenid = ?', {member})
+        elseif Framework == 'esx' then
+            result = MySQL.query.await('SELECT identifier FROM users WHERE identifier = ?', {member})
+        end
+        
+        if result and #result > 0 then
+            playerExists = true
+        end
+    end
+
+    if not playerExists then
+        print("addAccountMember: Citizen ID does not exist in database: " .. tostring(member))
+        return false
+    end
+    
+    if cachedAccounts[account].auth[member] then
+        print("addAccountMember: Player is already a member of account: " .. account)
+        return false
+    end
+
+    if not cachedPlayers[member] then
+        UpdatePlayerAccount(member)
+    end
+
+    if cachedPlayers[member] then
+        cachedPlayers[member].accounts[#cachedPlayers[member].accounts+1] = account
     end
 
     local auth = {}
-    for k, _ in pairs(cachedAccounts[account].auth) do auth[#auth+1] = k end
-    auth[#auth+1] = targetCID
-    cachedAccounts[account].auth[targetCID] = true
-    MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?',{json.encode(auth), account})
-
+    for k, _ in pairs(cachedAccounts[account].auth) do 
+        auth[#auth+1] = k 
+    end
+    auth[#auth+1] = member
+    
+    cachedAccounts[account].auth[member] = true
+    
+    MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?', {json.encode(auth), account})
+    
+    print("addAccountMember: Successfully added " .. member .. " to account " .. account)
+    return true
 end
-exports("addAccountMember", addAccountMember)
 
 local function removeAccountMember(account, member)
     local Player2 = getPlayerData(false, member)
@@ -759,21 +950,10 @@ local function removeAccountMember(account, member)
 
     MySQL.update('UPDATE bank_accounts_new SET auth = ? WHERE id = ?',{json.encode(tmp), account})
 end
-exports("removeAccountMember", removeAccountMember)
 
-local function getAccountTransactions(account)
-    if cachedAccounts[account] then
-        return cachedAccounts[account].transactions
-    elseif cachedPlayers[account] then
-        return cachedPlayers[account].transactions
-    end
-    print(locale("invalid_account", account))
-    return false
-end
-exports("getAccountTransactions", getAccountTransactions)
-
+-- Cash Command
 lib.addCommand('givecash', {
-    help = 'Gives an item to a player',
+    help = 'Gives cash to a player',
     params = {
         {
             name = 'target',
@@ -801,13 +981,14 @@ lib.addCommand('givecash', {
         AddMoney(iPlayer, args.amount, 'cash')
         local nameA = GetCharacterName(Player)
         local nameB = GetCharacterName(iPlayer)
-        Notify(source, {title = locale("bank_name"), description = locale('give_cash', nameB, tostring(args.amount)), type = "error"})
+        Notify(source, {title = locale("bank_name"), description = locale('give_cash', nameB, tostring(args.amount)), type = "success"})
         Notify(args.target, {title = locale("bank_name"), description = locale('received_cash', nameA, tostring(args.amount)), type = "success"})
     else
-        Notify(args.target, {title = locale("bank_name"), description = locale('not_enough_money'), type = "error"})
+        Notify(source, {title = locale("bank_name"), description = locale('not_enough_money'), type = "error"})
     end
 end)
 
+-- Database Tables Creation
 local createTables = {
     { query = "CREATE TABLE IF NOT EXISTS `bank_accounts_new` (`id` varchar(50) NOT NULL, `amount` int(11) DEFAULT 0, `transactions` longtext DEFAULT '[]', `auth` longtext DEFAULT '[]', `isFrozen` int(11) DEFAULT 0, `creator` varchar(50) DEFAULT NULL, PRIMARY KEY (`id`));", values = nil },
     { query = "CREATE TABLE IF NOT EXISTS `player_transactions` (`id` varchar(50) NOT NULL, `isFrozen` int(11) DEFAULT 0, `transactions` longtext DEFAULT '[]', PRIMARY KEY (`id`));", values = nil }
@@ -815,8 +996,21 @@ local createTables = {
 
 assert(MySQL.transaction.await(createTables), "Failed to create tables")
 
+-- Main Events
 RegisterNetEvent('Renewed-Banking:server:getBankData', function()
     local source = source
     local bankData = getBankData(source)
     TriggerClientEvent('Renewed-Banking:client:receiveBankData', source, bankData)
 end)
+
+-- Exports
+exports("handleTransaction", handleTransaction)
+exports('getAccountMoney', GetAccountMoney)
+exports('addAccountMoney', AddAccountMoney)
+exports('removeAccountMoney', RemoveAccountMoney)
+exports("changeAccountName", updateAccountName)
+exports('GetJobAccount', GetJobAccount)
+exports("CreateJobAccount", CreateJobAccount)
+exports("addAccountMember", addAccountMember)
+exports("removeAccountMember", removeAccountMember)
+exports("getAccountTransactions", getAccountTransactions)

@@ -51,7 +51,6 @@ AddEventHandler('onResourceStart', function(resourceName)
     initalizeBanking()
 end)
 
-
 RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
     DeletePeds()
 end)
@@ -255,7 +254,6 @@ AddEventHandler('esx:playerDropped', function(playerId, reason)
 		deadPlayers[playerId] = nil
 	end
 end)
-
 
 AddEventHandler('onResourceStart', function(resourceName)
     Wait(250)

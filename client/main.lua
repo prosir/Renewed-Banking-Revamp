@@ -219,27 +219,27 @@ RegisterNetEvent('Renewed-Banking:client:viewAccountsMenu', function()
 end)
 
 -- Update the checkAccountManagement callback to only return if management is available, not to show it
-  lib.callback.register('Renewed-Banking:client:checkAccountManagement', function()
-      local playerCoords = GetEntityCoords(PlayerPed)
-      local canManage = false
-      local canCreate = false
-      
-      for k = 1, #Config.peds do
-          local pedCoords = vector3(Config.peds[k].coords.x, Config.peds[k].coords.y, Config.peds[k].coords.z)
-          local distance = #(playerCoords - pedCoords)
-          
-          if distance < 10.0 then
-              canManage = true
-              canCreate = Config.peds[k].createAccounts or false
-              break
-          end
-      end
-      
-      return {
-          showManagement = canManage,
-          canCreateAccounts = canCreate
-      }
-  end)
+lib.callback.register('Renewed-Banking:client:checkAccountManagement', function()
+    local playerCoords = GetEntityCoords(PlayerPed)
+    local canManage = false
+    local canCreate = false
+    
+    for k = 1, #Config.peds do
+        local pedCoords = vector3(Config.peds[k].coords.x, Config.peds[k].coords.y, Config.peds[k].coords.z)
+        local distance = #(playerCoords - pedCoords)
+        
+        if distance < 10.0 then
+            canManage = true
+            canCreate = Config.peds[k].createAccounts or false
+            break
+        end
+    end
+    
+    return {
+        showManagement = canManage,
+        canCreateAccounts = canCreate
+    }
+end)
 
 -- Add this NUI callback to handle the account management check
 RegisterNUICallback('Renewed-Banking:client:checkAccountManagement', function(_, cb)
@@ -302,15 +302,15 @@ RegisterNetEvent('Renewed-Banking:client:deleteAccount', function(data)
 end)
 
 -- Add these NUI callbacks for the account management functions
-  RegisterNUICallback('Renewed-Banking:client:getPlayerAccounts', function(_, cb)
+RegisterNUICallback('Renewed-Banking:client:getPlayerAccounts', function(_, cb)
     lib.callback('Renewed-Banking:server:getPlayerAccounts', false, function(accounts)
-      SendNUIMessage({
-        action = 'accountsData',
-        data = accounts
-      })
+        SendNUIMessage({
+            action = 'accountsData',
+            data = accounts
+        })
     end)
     cb('ok')
-  end)
+end)
 
 RegisterNUICallback('Renewed-Banking:client:createNewAccount', function(data, cb)
     TriggerServerEvent('Renewed-Banking:server:createNewAccount', data)
@@ -343,6 +343,6 @@ RegisterNUICallback('Renewed-Banking:client:deleteAccount', function(data, cb)
 end)
 
 RegisterNUICallback('Renewed-Banking:server:getBankData', function(_, cb)
-  TriggerServerEvent('Renewed-Banking:server:getBankData')
-  cb('ok')
+    TriggerServerEvent('Renewed-Banking:server:getBankData')
+    cb('ok')
 end)
