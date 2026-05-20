@@ -50,3 +50,4 @@ All functionality, exports, and server logic come from the original [**Renewed-B
 If you find this UI revamp useful or use it on your server,  
 **please leave a star ⭐** — it motivates future updates and helps others discover it!
 
+a
