@@ -103,15 +103,13 @@
 
     {#if !account.isFrozen}
         <div class="grid grid-cols-3 gap-3 p-4 bg-fleeca-card">
-            {#if !isAtm}
-                <button 
-                    class="flex items-center justify-center py-3 px-2 bg-fleeca-green text-white rounded-lg font-medium hover:bg-fleeca-dark-green transition-all shadow-sm" 
-                    on:click={() => handleButton(account.id, "deposit")}
-                >
-                    <i class="fas fa-arrow-down text-white mr-2"></i>
-                    <span>{$translations.deposit_but || 'Deposit'}</span>
-                </button>
-            {/if}
+            <button 
+                class="flex items-center justify-center py-3 px-2 bg-fleeca-green text-white rounded-lg font-medium hover:bg-fleeca-dark-green transition-all shadow-sm" 
+                on:click={() => handleButton(account.id, "deposit")}
+            >
+                <i class="fas fa-arrow-down text-white mr-2"></i>
+                <span>{$translations.deposit_but || 'Deposit'}</span>
+            </button>
             <button 
                 class="flex items-center justify-center py-3 px-2 bg-fleeca-hover text-fleeca-text rounded-lg font-medium hover:bg-fleeca-bg transition-all border border-fleeca-border shadow-sm" 
                 on:click={() => handleButton(account.id, "withdraw")}
@@ -121,7 +119,6 @@
             </button>
             <button 
                 class="flex items-center justify-center py-3 px-2 bg-fleeca-hover text-fleeca-text rounded-lg font-medium hover:bg-fleeca-bg transition-all border border-fleeca-border shadow-sm" 
-                class:col-span-2={isAtm}
                 on:click={() => handleButton(account.id, "transfer")}
             >
                 <i class="fas fa-exchange-alt mr-2"></i>
